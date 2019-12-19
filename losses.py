@@ -127,7 +127,7 @@ class FocalLoss(nn.Module):
                 gt_widths  = torch.clamp(gt_widths, min=1)
                 gt_heights = torch.clamp(gt_heights, min=1)
  
-                # generate ground-truth targets which can correspond to regression bbox
+                # generate ground-truth targets which can correspond to regression bbox. Note, targets in regression is different targets in classification
                 targets_dx = (gt_ctr_x - anchor_ctr_x_pi) / anchor_widths_pi
                 targets_dy = (gt_ctr_y - anchor_ctr_y_pi) / anchor_heights_pi
                 targets_dw = torch.log(gt_widths / anchor_widths_pi)
