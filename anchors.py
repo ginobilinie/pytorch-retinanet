@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-
+# anchors is generated through emulating without considering ground truth
 class Anchors(nn.Module):
     def __init__(self, pyramid_levels=None, strides=None, sizes=None, ratios=None, scales=None):
         super(Anchors, self).__init__()
@@ -32,6 +32,7 @@ class Anchors(nn.Module):
             shifted_anchors = shift(image_shapes[idx], self.strides[idx], anchors)
             all_anchors     = np.append(all_anchors, shifted_anchors, axis=0)
 
+        # we have num_grids*num_anchors (for example,  368*368*9) boxes in all_anchors, and shape is (num_grids*num_anchors,4)
         all_anchors = np.expand_dims(all_anchors, axis=0)
 
         return torch.from_numpy(all_anchors.astype(np.float32)).cuda()
@@ -104,6 +105,7 @@ def anchors_for_shape(
 
 
 def shift(shape, stride, anchors):
+    # generate grids at the middle of two neighboring pixels
     shift_x = (np.arange(0, shape[1]) + 0.5) * stride
     shift_y = (np.arange(0, shape[0]) + 0.5) * stride
 
