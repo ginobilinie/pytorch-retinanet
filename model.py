@@ -250,17 +250,17 @@ class ResNet(nn.Module):
 
         features = self.fpn([x2, x3, x4])
 
-        regression = torch.cat([self.regressionModel(feature) for feature in features], dim=1)
+        regression = torch.cat([self.regressionModel(feature) for feature in features], dim=1) # predict 9 anchor boxes' location at each resolution
 
-        classification = torch.cat([self.classificationModel(feature) for feature in features], dim=1)
+        classification = torch.cat([self.classificationModel(feature) for feature in features], dim=1) # classify 9 anchor boxes' types at each resolution
 
-        anchors = self.anchors(img_batch)
+        anchors = self.anchors(img_batch) # generate 9 anchor boxes at each grid point with a stride, shape is (1, num_grid*num_anchors, 4)
 
         if self.training:
             return self.focalLoss(classification, regression, anchors, annotations)
         else:
-            transformed_anchors = self.regressBoxes(anchors, regression)
-            transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)
+            transformed_anchors = self.regressBoxes(anchors, regression) # obtain 9 bounding boxes for a location, here it is just the coordinates for each bbox
+            transformed_anchors = self.clipBoxes(transformed_anchors, img_batch) # clamp the predicted bboxes within the image
 
             scores = torch.max(classification, dim=2, keepdim=True)[0]
 
@@ -273,7 +273,8 @@ class ResNet(nn.Module):
             classification = classification[:, scores_over_thresh, :]
             transformed_anchors = transformed_anchors[:, scores_over_thresh, :]
             scores = scores[:, scores_over_thresh, :]
-
+            
+            # use nms to do the post-processing
             anchors_nms_idx = nms(torch.cat([transformed_anchors, scores], dim=2)[0, :, :], 0.5)
 
             nms_scores, nms_class = classification[0, anchors_nms_idx, :].max(dim=1)
