@@ -24,6 +24,12 @@ def calc_iou(a, b):
 class FocalLoss(nn.Module):
     #def __init__(self):
 
+    '''
+        classification: (batch, (H*W*num_anchors), num_classes)
+        regression: (batch, (H*W*num_anchors), 4)
+        anchor: (1, num_grids*num_anchors, 4)
+        annotation: (batch, num_annotations, 5)
+    '''
     def forward(self, classifications, regressions, anchors, annotations):
         alpha = 0.25
         gamma = 2.0
@@ -44,9 +50,11 @@ class FocalLoss(nn.Module):
             regression = regressions[j, :, :]
 
             bbox_annotation = annotations[j, :, :]
-            bbox_annotation = bbox_annotation[bbox_annotation[:, 4] != -1]
+            bbox_annotation = bbox_annotation[bbox_annotation[:, 4] != -1] # find all objects' corresponding boxes which is not -1 (-1 means ignored ones)
 
-            if bbox_annotation.shape[0] == 0:
+            # now bbox_annotation's shape is (num_annotations, 5)
+            
+            if bbox_annotation.shape[0] == 0: # no gt anchor boxes
                 regression_losses.append(torch.tensor(0).float().cuda())
                 classification_losses.append(torch.tensor(0).float().cuda())
 
@@ -55,26 +63,34 @@ class FocalLoss(nn.Module):
             classification = torch.clamp(classification, 1e-4, 1.0 - 1e-4)
 
             IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :4]) # num_anchors x num_annotations
-
+            
+            # currently, IoU shape is (num_anchors*num_annotations, 1)
+            
             IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
 
             #import pdb
             #pdb.set_trace()
 
             # compute the loss for classification
-            targets = torch.ones(classification.shape) * -1
+            # to do so, we have to first generate targes which could correspond to classification
+            targets = torch.ones(classification.shape) * -1 # ((H*W*num_anchors), num_classes)
             targets = targets.cuda()
-
+            
+            '''
+                -1 means not correctly detected boxes (IoU<0.4)
+                0 means detected boxes, but not quite correct (0.4<IoU<0.5)
+                1 means detected boxes with high overlap (IoU>0.5)
+            '''
             targets[torch.lt(IoU_max, 0.4), :] = 0
 
-            positive_indices = torch.ge(IoU_max, 0.5)
+            positive_indices = torch.ge(IoU_max, 0.5) # such prediction is thought to be meaningful
 
             num_positive_anchors = positive_indices.sum()
 
             assigned_annotations = bbox_annotation[IoU_argmax, :]
 
             targets[positive_indices, :] = 0
-            targets[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1
+            targets[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1 #  only the ground-tuth category for the effective bounding box is specified as 1, others are all 0 or -1
 
             alpha_factor = torch.ones(targets.shape).cuda() * alpha
 
@@ -93,6 +109,7 @@ class FocalLoss(nn.Module):
 
             # compute the loss for regression
 
+            # we only compute losses for those are thought to be sufficient correctly detected boxes (IoU>0.5) for bbox regression
             if positive_indices.sum() > 0:
                 assigned_annotations = assigned_annotations[positive_indices, :]
 
@@ -109,7 +126,8 @@ class FocalLoss(nn.Module):
                 # clip widths to 1
                 gt_widths  = torch.clamp(gt_widths, min=1)
                 gt_heights = torch.clamp(gt_heights, min=1)
-
+ 
+                # generate ground-truth targets which can correspond to regression bbox
                 targets_dx = (gt_ctr_x - anchor_ctr_x_pi) / anchor_widths_pi
                 targets_dy = (gt_ctr_y - anchor_ctr_y_pi) / anchor_heights_pi
                 targets_dw = torch.log(gt_widths / anchor_widths_pi)
